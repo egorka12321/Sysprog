@@ -30,8 +30,7 @@ void MyThread(Session* session)
 				if (ofs.is_open()) {
 					ofs << m.data << endl;
 				}
-				SafeWrite(L"Поток", session->sessionID, L"записал в файл "
-					, session->sessionID, ".txt ");
+				SafeWrite(L"Поток", session->sessionID, L"записал в файл", filename);
 			}
 		}
 	}
@@ -80,9 +79,7 @@ void processClient(tcp::socket s)
 			}
 			else
 			{
-				wcout << L"Íåò àêòèâíûõ ñåññèé äëÿ çàêðûòèÿ." << endl;
-				wcout << L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя" << endl;
-				wcout << L"АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
+				wcout << L"Нет активных сессий для закрытия" << endl;
 			}
 			break;
 		}
@@ -94,10 +91,10 @@ void processClient(tcp::socket s)
 			wstring text = m.data;
 
 			if (id == -1) {
-				wcout << L"Ãëàâíûé ïîòîê: " << text << endl;
+				wcout << L"Главный поток получил:" << text << endl;
 			}
 			else if (id == -2) {
-				wcout << L"Ñîîáùåíèå âñåì ïîòîêàì: " << text << endl;
+				wcout << L"Сообщение всем потокам:" << text << endl;
 				for (auto& c : sessions) {
 					Message message(MT_DATA, text);
 					c.second->addMessage(message);
@@ -110,7 +107,7 @@ void processClient(tcp::socket s)
 					it->second->addMessage(message);
 				}
 				else {
-					wcout << L"Ñåññèÿ ñ ID " << id << L" íå íàéäåíà!" << endl;
+					wcout << L"Сессия с ID " << id << L" не найдена!" << endl;
 				}
 			}
 			break;
@@ -118,9 +115,9 @@ void processClient(tcp::socket s)
 		case MT_GETDATA:
 		{
 			unique_lock<mutex> lock(sessionsMutex);
-			std::wstring response = std::to_wstring(sessions.size());
+			wstring response = to_wstring(sessions.size());
 			for (const auto& s : sessions) {
-				response += L"," + std::to_wstring(s.first);
+				response += L"," + to_wstring(s.first);
 			}
 
 			Message reply(MT_DATA, response);
@@ -129,9 +126,9 @@ void processClient(tcp::socket s)
 		}
 		}
 	}
-	catch (std::exception& e)
+	catch (exception& e)
 	{
-		std::wcerr << "Exception: " << e.what() << endl;
+		wcerr << "Exception: " << e.what() << endl;
 	}
 }
 
@@ -145,19 +142,19 @@ void start()
         int port = 12345;
         boost::asio::io_context io;
         tcp::acceptor a(io, tcp::endpoint(tcp::v4(), port));
-		wcout << L"Такой порт: " << port << endl;
+		wcout << L"Порт: " << port << endl;
 
 		launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
 		launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
 
         while (true)
         {
-            std::thread(processClient, a.accept()).detach();
+            thread(processClient, a.accept()).detach();
         }
     }
-    catch (std::exception& e)
+    catch (exception& e)
     {
-        std::wcerr << "Exception: " << e.what() << endl;
+        wcerr << "Exception: " << e.what() << endl;
     }
 }
 

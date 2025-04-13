@@ -21,7 +21,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 extern "C" {
 
-    std::wstring lastServerResponse;
+    wstring lastServerResponse;
 
     __declspec(dllexport) void __stdcall sendCommand(int selected_thread, int commandId, const wchar_t* message)
     {
@@ -47,8 +47,8 @@ extern "C" {
                 lastServerResponse = response.data;
             }
         }
-        catch (const std::exception& e) {
-            std::wcerr << L"[DLL] sendCommand ошибка: " << e.what() << std::endl;
+        catch (const exception& e) {
+            wcerr << L"[DLL] sendCommand ошибка: " << e.what() << endl;
         }
     }
 

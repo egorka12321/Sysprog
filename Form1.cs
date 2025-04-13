@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Timers;
 using System.Windows.Forms;
 
 namespace Lab1_Titov
@@ -12,6 +13,7 @@ namespace Lab1_Titov
     {
         private Process process;
         private int threadCountStop = 0;
+        private System.Windows.Forms.Timer updateTimer;
 
         [DllImport(@"C:\Users\user\Documents\Lab1_Titov\x64\Debug\DLL_Titov.dll", CharSet = CharSet.Unicode)]
         private static extern void sendCommand(int selected_thread, int commandId, string message);
@@ -120,6 +122,18 @@ namespace Lab1_Titov
             IntPtr responsePtr = getLastServerResponse();
             string response = Marshal.PtrToStringUni(responsePtr);
             UpdateListBoxFromResponse(response);
+        }
+
+        private void OnTimeout(Object source, ElapsedEventArgs e)
+        {
+            UpdateThreadsListBox();
+        }
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            var timer = new System.Timers.Timer(1000);
+            timer.Elapsed += OnTimeout;
+            timer.AutoReset = true;
+            timer.Enabled = true;
         }
 
         private void UpdateListBoxFromResponse(string response)
