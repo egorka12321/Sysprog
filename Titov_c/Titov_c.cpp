@@ -1,7 +1,7 @@
 ﻿#include "../DLL_Titov/asio.h"
 #include "Titov_c.h"
 #include "../DLL_Titov/dllmain.cpp"
-
+#include <fstream>;
 vector<Session*> sessions;
 CRITICAL_SECTION cs;
 
@@ -102,16 +102,6 @@ void processClient(tcp::socket s)
     }
 }
 
-//void appendToFile(int sessionId, const wstring& text) {
-//    wstring filename = to_wstring(sessionId) + L".txt";
-//    wofstream ofs(filename, ios::app);
-//    ofs.imbue(locale("En_US.UTF-8"));
-//
-//    if (ofs.is_open()) {
-//        ofs << text << endl;
-//    }
-//}
-
 DWORD WINAPI MyThread(LPVOID lpParameter)
 {
     Session* session = static_cast<Session*>(lpParameter);
@@ -137,7 +127,13 @@ DWORD WINAPI MyThread(LPVOID lpParameter)
             }
             else if (m.header.messageType == MT_DATA) {
                 EnterCriticalSection(&cs);
-                appendToFile(session->sessionID, m.data);
+                wstring filename = to_wstring(session->sessionID) + L".txt";
+                wofstream ofs(filename, ios::app);
+                ofs.imbue(locale("En_US.UTF-8"));
+
+                if (ofs.is_open()) {
+                    ofs << m.data << endl;
+                }
                 wcout << L"Поток " << session->sessionID << L" записал в файл "
                     << session->sessionID << ".txt " << endl;
                 LeaveCriticalSection(&cs);
@@ -158,8 +154,7 @@ void start()
         boost::asio::io_context io;
         tcp::acceptor a(io, tcp::endpoint(tcp::v4(), port));
 
-        launchClient(L"AsioClient.exe");
-        launchClient(L"SharpClient.exe");
+        launchClient(L"C:/Users/user/Documents/Lab1_Titov/x64/Debug/Titov_c.exe");
 
         while (true)
         {
@@ -170,99 +165,6 @@ void start()
     {
         std::wcerr << "Exception: " << e.what() << endl;
     }
-
-
-    /*InitializeCriticalSection(&cs);
-
-    HANDLE eventConfirm = CreateEvent(NULL, FALSE, FALSE, L"eventConfirm");
-    HANDLE eventStart = CreateEvent(NULL, FALSE, FALSE, L"eventStart");
-    HANDLE eventStop = CreateEvent(NULL, FALSE, FALSE, L"eventStop");
-    HANDLE eventExit = CreateEvent(NULL, FALSE, FALSE, L"eventExit");
-    HANDLE eventSend = CreateEvent(NULL, FALSE, FALSE, L"eventSend");
-    HANDLE events[] = { eventConfirm, eventStart, eventStop, eventExit, eventSend };
-
-    int countThreads = 0;
-
-    while (true)
-    {
-        DWORD result = WaitForMultipleObjects(5, events, FALSE, INFINITE);
-
-        switch (result)
-        {
-        case WAIT_OBJECT_0 + 1:
-        {
-            countThreads++;
-            Session* newSession = new Session(countThreads);
-            CreateThread(NULL, 0, MyThread, newSession, 0, NULL);
-            sessions.push_back(newSession);
-            SetEvent(eventConfirm);
-            break;
-        }
-
-        case WAIT_OBJECT_0 + 2:
-        {
-            if (!sessions.empty())
-            {
-                EnterCriticalSection(&cs);
-                Session* lastSession = sessions.back();
-                lastSession->addMessage(Message(MT_CLOSE));
-                LeaveCriticalSection(&cs);
-            }
-            else
-            {
-                exit(1);
-            }
-            break;
-        }
-
-        case WAIT_OBJECT_0 + 3:
-        {
-            EnterCriticalSection(&cs);
-            for (Session* session : sessions)
-            {
-                session->addMessage(Message(MT_CLOSE));
-            }
-            LeaveCriticalSection(&cs);
-            DeleteCriticalSection(&cs);
-            return;
-        }
-        case WAIT_OBJECT_0 + 4:
-        {
-            header h;
-            wstring text = ReadData(h);
-            if (!text.empty())
-            {
-                EnterCriticalSection(&cs);
-                if (h.addr == -1)
-                {
-                    wcout << L"Главный поток получил: " << text << endl;
-                }
-                else if (h.addr == 0)
-                {
-                    for (Session* session : sessions)
-                    {
-                        session->addMessage(Message(MT_DATA, text));
-                    }
-                }
-                else
-                {
-                    for (Session* session : sessions)
-                    {
-                        if (session->sessionID == h.addr)
-                        {
-                            session->addMessage(Message(MT_DATA, text));
-                            break;
-                        }
-                    }
-                }
-                LeaveCriticalSection(&cs);
-            }
-            break;
-        }
-        default:
-            break;
-        }
-    }*/
 }
 
 int main()

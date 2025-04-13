@@ -18,68 +18,42 @@ BOOL APIENTRY DllMain(HMODULE hModule,
     return TRUE;
 }
 
-struct header
-{
-    int addr;
-    int size;
-};
+extern "C" {
 
-HANDLE hMutex = CreateMutex(NULL, FALSE, L"GlobalFileMapMutex");
+    std::wstring lastServerResponse;
 
-//HANDLE mapsend(int addr, const wchar_t* str)
-//{
-//    header h = { addr, int(wcslen(str) * 2) };
-//    HANDLE hFile = CreateFile(L"filemap.dat", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, 0);
-//
-//    HANDLE hFileMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, h.size + sizeof(header), L"MyMap");
-//    BYTE* buff = (BYTE*)MapViewOfFile(hFileMap, FILE_MAP_ALL_ACCESS, 0, 0, h.size + sizeof(header));
-//
-//    memcpy(buff, &h, sizeof(header));
-//    memcpy(buff + sizeof(header), str, h.size);
-//
-//    UnmapViewOfFile(buff);
-//
-//    CloseHandle(hFileMap);
-//    CloseHandle(hFile);
-//    return hFileMap;
-//}
-//
-//wstring mapreceive(header& h)
-//{
-//    HANDLE hFile = CreateFile(L"filemap.dat", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, 0);
-//
-//    HANDLE hFileMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, sizeof(header), L"MyMap");
-//
-//    LPVOID buff = MapViewOfFile(hFileMap, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(header));
-//    h = *((header*)buff);
-//    UnmapViewOfFile(buff);
-//    CloseHandle(hFileMap);
-//
-//    int n = h.size + sizeof(header);
-//    hFileMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, n, L"MyMap");
-//    buff = MapViewOfFile(hFileMap, FILE_MAP_ALL_ACCESS, 0, 0, n);
-//    wstring s((wchar_t*)((BYTE*)buff + sizeof(header)), h.size / 2);
-//
-//    UnmapViewOfFile(buff);
-//    CloseHandle(hFileMap);
-//    CloseHandle(hFile);
-//    return s;
-//}
+    __declspec(dllexport) void __stdcall sendCommand(int selected_thread, int commandId, const wchar_t* message)
+    {
+        try {
+            boost::asio::io_context io;
+            tcp::socket socket(io);
+            tcp::resolver resolver(io);
+            auto endpoints = resolver.resolve("127.0.0.1", "12345");
+            boost::asio::connect(socket, endpoints);
 
-//extern "C" {
-//
-//    // Экспортируем функцию для отправки данных
-//    __declspec(dllexport) void __stdcall SendData(int selected_thread, const wchar_t* text)
-//    {
-//        WaitForSingleObject(hMutex, INFINITE);
-//        mapsend(selected_thread, text);
-//        ReleaseMutex(hMutex);
-//    }
-//}
-//__declspec(dllexport) wstring ReadData(header& h)
-//{
-//    WaitForSingleObject(hMutex, INFINITE);
-//    wstring message = mapreceive(h);
-//    ReleaseMutex(hMutex);
-//    return message;
-//}
+            MessageHeader header;
+            header.messageType = commandId;
+            header.from = selected_thread;
+            header.size = message ? static_cast<int>(wcslen(message) * sizeof(wchar_t)) : 0;
+
+            sendData(socket, &header, sizeof(header));
+            if (header.size > 0)
+                sendData(socket, message, header.size);
+
+            if (commandId == MT_GETDATA) {
+                Message response;
+                response.receive(socket);
+                lastServerResponse = response.data;
+            }
+        }
+        catch (const std::exception& e) {
+            std::wcerr << L"[DLL] sendCommand ошибка: " << e.what() << std::endl;
+        }
+    }
+
+    __declspec(dllexport) const wchar_t* __stdcall getLastServerResponse()
+    {
+        return lastServerResponse.c_str();
+    }
+
+}
