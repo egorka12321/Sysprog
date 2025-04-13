@@ -1,6 +1,7 @@
 ﻿// dllmain.cpp : Определяет точку входа для приложения DLL.
 #include "pch.h"
 #include "asio.h"
+#include "C:/Users/user/Documents/Lab1_Titov/Titov_c/Titov_c.h""
 
 BOOL APIENTRY DllMain(HMODULE hModule,
     DWORD  ul_reason_for_call,
