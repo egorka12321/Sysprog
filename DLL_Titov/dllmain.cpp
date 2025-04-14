@@ -20,41 +20,35 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 }
 
 extern "C" {
-
-    wstring lastServerResponse;
+    int lastServerResponse = 0;
 
     __declspec(dllexport) void __stdcall sendCommand(int selected_thread, int commandId, const wchar_t* message)
     {
-        try {
-            boost::asio::io_context io;
-            tcp::socket socket(io);
-            tcp::resolver resolver(io);
-            auto endpoints = resolver.resolve("127.0.0.1", "12345");
-            boost::asio::connect(socket, endpoints);
+        boost::asio::io_context io;
+        tcp::socket socket(io);
+        tcp::resolver resolver(io);
+        auto endpoints = resolver.resolve("127.0.0.1", "12345");
+        boost::asio::connect(socket, endpoints);
 
-            MessageHeader header;
-            header.messageType = commandId;
-            header.from = selected_thread;
-            header.size = message ? static_cast<int>(wcslen(message) * sizeof(wchar_t)) : 0;
+        MessageHeader header;
+        header.messageType = commandId;
+        header.from = selected_thread;
+        header.size = int(wcslen(message) * sizeof(wchar_t));
 
-            sendData(socket, &header, sizeof(header));
-            if (header.size > 0)
-                sendData(socket, message, header.size);
+        sendData(socket, &header, sizeof(header));
+        if (header.size > 0)
+            sendData(socket, message, header.size);
 
-            if (commandId == MT_GETDATA) {
-                Message response;
-                response.receive(socket);
-                lastServerResponse = response.data;
-            }
-        }
-        catch (const exception& e) {
-            wcerr << L"[DLL] sendCommand ошибка: " << e.what() << endl;
+        if (commandId == MT_GETDATA) {
+            int count;
+            receiveData(socket, &count, sizeof(count));
+            lastServerResponse = count;
         }
     }
 
-    __declspec(dllexport) const wchar_t* __stdcall getLastServerResponse()
+    __declspec(dllexport) int __stdcall getLastServerResponse()
     {
-        return lastServerResponse.c_str();
+        return lastServerResponse;
     }
 
 }
