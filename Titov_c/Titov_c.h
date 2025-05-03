@@ -82,11 +82,12 @@ class Session
 {
 	queue<Message> messages;
 public:
-	int sessionID;
 	CRITICAL_SECTION cs;
+	int id;
+	wstring name;
 
-	Session(int sessionID)
-		:sessionID(sessionID)
+	Session(int id, std::wstring name)
+		:id(id), name(name)
 	{
 		InitializeCriticalSection(&cs);
 	}

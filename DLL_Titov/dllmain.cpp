@@ -22,7 +22,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 extern "C" {
     int lastServerResponse = 0;
 
-    __declspec(dllexport) void __stdcall sendCommand(int selected_thread, int commandId, const wchar_t* message)
+    __declspec(dllexport) void __stdcall sendCommand(int commandId, int selected_thread, const wchar_t* message)
     {
         boost::asio::io_context io;
         tcp::socket socket(io);

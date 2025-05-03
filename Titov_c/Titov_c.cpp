@@ -2,12 +2,12 @@
 #include "Titov_c.h"
 #include "../DLL_Titov/dllmain.cpp"
 
-vector<Session*> sessions;
-mutex sessionsMutex;
+static int maxID = 0;
+static std::map<int, Session*> sessions;
 
 void MyThread(Session* session)
 {
-	SafeWrite(L"Поток", session->sessionID, L"создан");
+	SafeWrite(L"Поток", session->id, L"создан");
 	while (true)
 	{
 		Message m;
@@ -15,19 +15,20 @@ void MyThread(Session* session)
 		{
 			if (m.header.messageType == MT_CLOSE)
 			{
-				SafeWrite(L"Поток", session->sessionID, L"закрыт");
+				SafeWrite(L"Поток", session->id, L"закрыт");
 				delete session;
 				break;
 			}
-			else if (m.header.messageType == MT_DATA) {
-				wstring filename = to_wstring(session->sessionID) + L".txt";
+			else if (m.header.messageType == MT_DATA) 
+			{
+				wstring filename = to_wstring(session->id) + L".txt";
 				wofstream ofs(filename, ios::app);
 				ofs.imbue(locale("En_US.UTF-8"));
 
 				if (ofs.is_open()) {
 					ofs << m.data << endl;
 				}
-				SafeWrite(L"Поток", session->sessionID, L"записал в файл", filename);
+				SafeWrite(L"Поток", session->id, L"записал в файл", filename);
 			}
 		}
 	}
@@ -54,20 +55,21 @@ void processClient(tcp::socket s)
 		{
 			case MT_INIT:
 			{
-				lock_guard<mutex> lock(sessionsMutex);
-				Session* newSession = new Session(sessions.size());
-				sessions.push_back(newSession);
+				Session* newSession = new Session(maxID++, m.data);
+				sessions[newSession->id] = newSession;
 				thread(MyThread, newSession).detach();
 				break;
 			}
 			case MT_EXIT:
 			{
-				lock_guard<mutex> lock(sessionsMutex);
 				if (!sessions.empty())
 				{
-					Session* lastSession = sessions.back();
+					auto it = std::prev(sessions.end());
+					int lastID = it->first;
+					Session* lastSession = it->second;
 					lastSession->addMessage(MT_CLOSE);
-					sessions.pop_back();
+					sessions.erase(it);
+					--maxID;
 				}
 				else
 				{
@@ -77,39 +79,32 @@ void processClient(tcp::socket s)
 			}
 			case MT_SENDDATA:
 			{
-				lock_guard<mutex> lock(sessionsMutex);
 				int id = m.header.from;
 				wstring text = m.data;
 
-				if (id == -1) {
-					wcout << L"Главный поток получил:" << text << endl;
+				if (id == -2) {
+					wcout << L"Главный поток получил: " << text << endl;
 				}
-				else if (id == -2) {
-					wcout << L"Сообщение всем потокам:" << text << endl;
-					for (auto& session : sessions) {
-						Message message(MT_DATA, text);
-						session->addMessage(message);
+				else if (id == -1) {
+					wcout << L"Сообщение всем потокам: " << text << endl;
+					for (auto& [sessId, sess] : sessions) {
+						sess->addMessage(Message(MT_DATA, text));
 					}
 				}
 				else {
-					bool found = false;
-					for (Session* s : sessions) {
-						if (s->sessionID == id) {
-							Message message(MT_DATA, text);
-							s->addMessage(message);
-							found = true;
-							break;
-						}
+					auto it = sessions.find(id);
+					if (it != sessions.end()) {
+						it->second->addMessage(Message(MT_DATA, text));
 					}
-					if (!found) {
+					else {
 						wcout << L"Сессия с ID " << id << L" не найдена!" << endl;
 					}
 				}
 				break;
 			}
+
 			case MT_GETDATA:
 			{
-				lock_guard<mutex> lock(sessionsMutex);
 				int sessionCount = sessions.size();
 				sendData(s, &sessionCount, sizeof(sessionCount));
 				break;
