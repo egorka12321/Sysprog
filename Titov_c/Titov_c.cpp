@@ -1,38 +1,34 @@
 ﻿#include "../DLL_Titov/asio.h"
 #include "Titov_c.h"
-#include "../DLL_Titov/dllmain.cpp"
 
-static int maxID = 0;
-static std::map<int, Session*> sessions;
+int maxID = MR_USER;
+map<int, shared_ptr<Session>> sessions;
+const chrono::seconds TIMEOUT(10); // Таймаут в 10 секунд
+mutex sessionsMutex; 
 
-void MyThread(Session* session)
+void checkTimeouts()
 {
-	SafeWrite(L"Поток", session->id, L"создан");
-	while (true)
-	{
-		Message m;
-		if (session->getMessage(m))
-		{
-			if (m.header.messageType == MT_CLOSE)
-			{
-				SafeWrite(L"Поток", session->id, L"закрыт");
-				delete session;
-				break;
-			}
-			else if (m.header.messageType == MT_DATA) 
-			{
-				wstring filename = to_wstring(session->id) + L".txt";
-				wofstream ofs(filename, ios::app);
-				ofs.imbue(locale("En_US.UTF-8"));
-
-				if (ofs.is_open()) {
-					ofs << m.data << endl;
-				}
-				SafeWrite(L"Поток", session->id, L"записал в файл", filename);
-			}
-		}
-	}
-	return;
+    while (true)
+    {
+        this_thread::sleep_for(chrono::seconds(10));
+        auto now = chrono::steady_clock::now();
+        lock_guard<mutex> lock(sessionsMutex);
+        for (auto it = sessions.begin(); it != sessions.end(); )
+        {
+            auto elapsed = chrono::duration_cast<chrono::seconds>(now - it->second->lastAccessTime);
+            if (elapsed > TIMEOUT)
+            {
+                Message exitMsg(it->first, MR_BROKER, MT_TIMEOUT_EXIT);
+                it->second->addMessage(exitMsg);
+                this_thread::sleep_for(chrono::seconds(1));
+                it = sessions.erase(it); // Удаляем сессию
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
 }
 
 void launchClient(wstring path)
@@ -46,77 +42,101 @@ void launchClient(wstring path)
 
 void processClient(tcp::socket s)
 {
-	try
-	{
-		Message m;
-		int code = m.receive(s);
+    try
+    {
+        Message m;
+        m.receive(s);
+        int code = m.header.type;
+        int from = m.header.from;
+        int to = m.header.to;
 
-		switch (code)
-		{
-			case MT_INIT:
-			{
-				Session* newSession = new Session(maxID++, m.data);
-				sessions[newSession->id] = newSession;
-				thread(MyThread, newSession).detach();
-				break;
-			}
-			case MT_EXIT:
-			{
-				if (!sessions.empty())
-				{
-					auto it = std::prev(sessions.end());
-					int lastID = it->first;
-					Session* lastSession = it->second;
-					lastSession->addMessage(MT_CLOSE);
-					sessions.erase(it);
-					--maxID;
-				}
-				else
-				{
-					wcout << L"Нет активных сессий для закрытия" << endl;
-				}
-				break;
-			}
-			case MT_SENDDATA:
-			{
-				int id = m.header.from;
-				wstring text = m.data;
+        if (to != 0)
+        {
+            lock_guard<mutex> lock(sessionsMutex);
+            auto it = sessions.find(from);
+            if (it != sessions.end())
+            {
+                it->second->updateLastAccessTime();
+            }
+        }
 
-				if (id == -2) {
-					wcout << L"Главный поток получил: " << text << endl;
-				}
-				else if (id == -1) {
-					wcout << L"Сообщение всем потокам: " << text << endl;
-					for (auto& [sessId, sess] : sessions) {
-						sess->addMessage(Message(MT_DATA, text));
-					}
-				}
-				else {
-					auto it = sessions.find(id);
-					if (it != sessions.end()) {
-						it->second->addMessage(Message(MT_DATA, text));
-					}
-					else {
-						wcout << L"Сессия с ID " << id << L" не найдена!" << endl;
-					}
-				}
-				break;
-			}
-
-			case MT_GETDATA:
-			{
-				int sessionCount = sessions.size();
-				sendData(s, &sessionCount, sizeof(sessionCount));
-				break;
-			}
-		}
-	}
-	catch (exception& e)
-	{
-		wcerr << "Exception: " << e.what() << endl;
-	}
+        switch (code)
+        {
+            case MT_INIT:
+            {
+                lock_guard<mutex> lock(sessionsMutex);
+                int newID = ++maxID;
+                wstring clientName = L"Клиент " + to_wstring(newID);
+                auto session = make_shared<Session>(newID, clientName);
+                sessions[newID] = session;
+                Message response(newID, MR_BROKER, MT_INIT, clientName);
+                response.send(s);
+                SafeWrite(L"Создан клиент: ID=" + to_wstring(newID) + L", имя=" + clientName);
+                break;
+            }
+            case MT_EXIT:
+            {
+                lock_guard<mutex> lock(sessionsMutex);
+                sessions.erase(from);
+                SafeWrite(L"Клиент отключен: ID=" + to_wstring(from));
+                break;
+            }
+            case MT_GETSESSIONS:
+            {
+                lock_guard<mutex> lock(sessionsMutex);
+                wstring sessionList;
+                for (const auto& [id, session] : sessions)
+                {
+                    sessionList += to_wstring(id) + L":Клиент " + to_wstring(id) + L";";
+                }
+                Message response(from, MR_BROKER, MT_DATA, sessionList);
+                response.send(s);
+                break;
+            }
+            case MT_GETDATA:
+            {
+                lock_guard<mutex> lock(sessionsMutex);
+                auto it = sessions.find(from);
+                if (it != sessions.end())
+                {
+                    if (!it->second->messages.empty())
+                    {
+                        Message msg = it->second->messages.front();
+                        it->second->messages.pop();
+                        msg.send(s);
+                    }
+                    else
+                    {
+                        Message response(from, MR_BROKER, MT_NODATA);
+                        response.send(s);
+                    }
+                }
+                break;
+            }
+            case MT_DATA:
+            {
+                lock_guard<mutex> lock(sessionsMutex);
+                int to = m.header.to;
+                if (to == MR_ALL)
+                {
+                    for (auto& [id, session] : sessions)
+                    {
+                        session->addMessage(m);
+                    }
+                }
+                else if (sessions.find(to) != sessions.end())
+                {
+                    sessions[to]->addMessage(m);
+                }
+                break;
+            }
+        }
+    }
+    catch (exception& e)
+    {
+        cerr << "Exception: " << e.what() << endl;
+    }
 }
-
 void start()
 {
     locale::global(locale("rus_rus.866"));
@@ -131,6 +151,10 @@ void start()
 
 		launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
 		launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
+        launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
+
+        thread timeoutThread(checkTimeouts);
+        timeoutThread.detach();
 
         while (true)
         {

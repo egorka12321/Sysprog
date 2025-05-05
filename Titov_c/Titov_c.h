@@ -30,17 +30,27 @@ enum MessageTypes
 {
 	MT_INIT,
 	MT_EXIT,
-	MT_SENDDATA,
+	MT_GETSESSIONS,
 	MT_GETDATA,
-	MT_CLOSE,
 	MT_DATA,
+	MT_NODATA,
+	MT_UPDATE,
+	MT_TIMEOUT_EXIT
+};
+
+enum MessageRecipients
+{
+	MR_USER = 100,
+	MR_BROKER = -1,
+	MR_ALL = -2
 };
 
 struct MessageHeader
 {
-	int messageType;
-	int size;
+	int to;
 	int from;
+	int type;
+	int size;
 };
 
 class Message
@@ -48,12 +58,12 @@ class Message
 public:
 	MessageHeader header = { 0 };
 	wstring data;
-	Message() {}
 
-	Message(MessageTypes messageType, const wstring& data = L"")
-		:data(data)
+	Message() {}
+	Message(int to, int from, int type = MT_DATA, const wstring& data = L"")
+		: data(data)
 	{
-		header = { messageType,  int(data.length() * sizeof(wchar_t)) };
+		header = { to, from, type, int(data.length() * sizeof(wchar_t)) };
 	}
 
 	void send(tcp::socket& s)
@@ -73,21 +83,22 @@ public:
 			data.resize(header.size / sizeof(wchar_t));
 			receiveData(s, &data[0], header.size);
 		}
-		return header.messageType;
+		return header.type;
 	}
 };
 
 
 class Session
 {
-	queue<Message> messages;
 public:
 	CRITICAL_SECTION cs;
+	queue<Message> messages;
 	int id;
 	wstring name;
+	chrono::steady_clock::time_point lastAccessTime; // Время последнего обращения
 
-	Session(int id, std::wstring name)
-		:id(id), name(name)
+	Session(int id, wstring name)
+		: id(id), name(name), lastAccessTime(chrono::steady_clock::now())
 	{
 		InitializeCriticalSection(&cs);
 	}
@@ -118,11 +129,9 @@ public:
 		return res;
 	}
 
-	void addMessage(MessageTypes messageType, const wstring& data = L"")
+	void updateLastAccessTime()
 	{
-		Message m(messageType, data);
-		addMessage(m);
+		lastAccessTime = chrono::steady_clock::now();
 	}
-
 };
 
