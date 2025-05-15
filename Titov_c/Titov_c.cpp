@@ -1,4 +1,4 @@
-﻿#include "../DLL_Titov/asio.h"
+﻿#include "asio.h"
 #include "Titov_c.h"
 
 int maxID = MR_USER;
@@ -6,30 +6,30 @@ map<int, shared_ptr<Session>> sessions;
 const chrono::seconds TIMEOUT(10); // Таймаут в 10 секунд
 mutex sessionsMutex; 
 
-void checkTimeouts()
-{
-    while (true)
-    {
-        this_thread::sleep_for(chrono::seconds(10));
-        auto now = chrono::steady_clock::now();
-        lock_guard<mutex> lock(sessionsMutex);
-        for (auto it = sessions.begin(); it != sessions.end(); )
-        {
-            auto elapsed = chrono::duration_cast<chrono::seconds>(now - it->second->lastAccessTime);
-            if (elapsed > TIMEOUT)
-            {
-                Message exitMsg(it->first, MR_BROKER, MT_TIMEOUT_EXIT);
-                it->second->addMessage(exitMsg);
-                this_thread::sleep_for(chrono::seconds(1));
-                it = sessions.erase(it); // Удаляем сессию
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-}
+//void checkTimeouts()
+//{
+//    while (true)
+//    {
+//        this_thread::sleep_for(chrono::seconds(10));
+//        auto now = chrono::steady_clock::now();
+//        lock_guard<mutex> lock(sessionsMutex);
+//        for (auto it = sessions.begin(); it != sessions.end(); )
+//        {
+//            auto elapsed = chrono::duration_cast<chrono::seconds>(now - it->second->lastAccessTime);
+//            if (elapsed > TIMEOUT)
+//            {
+//                Message exitMsg(it->first, MR_BROKER, MT_TIMEOUT_EXIT);
+//                it->second->addMessage(exitMsg);
+//                it = sessions.erase(it); // Удаляем сессию
+//                wcout << L"сессия удалена" << it->first << endl;
+//            }
+//            else
+//            {
+//                ++it;
+//            }
+//        }
+//    }
+//}
 
 void launchClient(wstring path)
 {
@@ -50,7 +50,7 @@ void processClient(tcp::socket s)
         int from = m.header.from;
         int to = m.header.to;
 
-        if (to != 0)
+        /*if (to != 0)
         {
             lock_guard<mutex> lock(sessionsMutex);
             auto it = sessions.find(from);
@@ -58,11 +58,11 @@ void processClient(tcp::socket s)
             {
                 it->second->updateLastAccessTime();
             }
-        }
+        }*/
 
         switch (code)
         {
-            case MT_INIT:
+            case MT_INIT: // Клиент инициализируется
             {
                 lock_guard<mutex> lock(sessionsMutex);
                 int newID = ++maxID;
@@ -74,14 +74,14 @@ void processClient(tcp::socket s)
                 SafeWrite(L"Создан клиент: ID=" + to_wstring(newID) + L", имя=" + clientName);
                 break;
             }
-            case MT_EXIT:
+            case MT_EXIT: // Клиент завершает работу
             {
                 lock_guard<mutex> lock(sessionsMutex);
                 sessions.erase(from);
                 SafeWrite(L"Клиент отключен: ID=" + to_wstring(from));
                 break;
             }
-            case MT_GETSESSIONS:
+            case MT_GETSESSIONS: // Клиент запрашивает список активных сессий
             {
                 lock_guard<mutex> lock(sessionsMutex);
                 wstring sessionList;
@@ -93,7 +93,7 @@ void processClient(tcp::socket s)
                 response.send(s);
                 break;
             }
-            case MT_GETDATA:
+            case MT_GETDATA: // Клиент запрашивает свои сообщения
             {
                 lock_guard<mutex> lock(sessionsMutex);
                 auto it = sessions.find(from);
@@ -113,7 +113,7 @@ void processClient(tcp::socket s)
                 }
                 break;
             }
-            case MT_DATA:
+            case MT_DATA: // Клиент отправил сообщение
             {
                 lock_guard<mutex> lock(sessionsMutex);
                 int to = m.header.to;
@@ -140,7 +140,6 @@ void processClient(tcp::socket s)
 void start()
 {
     locale::global(locale("rus_rus.866"));
-    wcin.imbue(locale());
     wcout.imbue(locale());
     try
     {
@@ -153,8 +152,8 @@ void start()
 		launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
         launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
 
-        thread timeoutThread(checkTimeouts);
-        timeoutThread.detach();
+        //thread timeoutThread(checkTimeouts);
+        //timeoutThread.detach();
 
         while (true)
         {

@@ -134,6 +134,7 @@
     <ClCompile Include="Titov_c.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="asio.h" />
     <ClInclude Include="Titov_c.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

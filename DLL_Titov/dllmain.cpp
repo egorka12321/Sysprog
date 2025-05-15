@@ -29,7 +29,7 @@ extern "C" {
         Message m(0, 0, MT_INIT, name);
         m.send(s);
         m.receive(s);
-        if (m.header.type == MT_INIT)
+        if (m.header.type == MT_INIT) // Если ответ — подтверждение инициализации
         {
             return m.header.to; // Возвращаем ID клиента
         }
@@ -43,7 +43,7 @@ extern "C" {
         tcp::resolver r(io);
         boost::asio::connect(s, r.resolve("127.0.0.1", "12345"));
         Message m(to, from, MT_DATA, message);
-        m.send(s);
+        m.send(s); // Отправляем сообщение серверу
     }
 
     __declspec(dllexport) int __stdcall getSessionList(int clientID, wchar_t* buffer, int bufferSize)
@@ -55,12 +55,12 @@ extern "C" {
         Message m(0, clientID, MT_GETSESSIONS);
         m.send(s);
         m.receive(s);
-        if (m.header.type == MT_DATA)
+        if (m.header.type == MT_DATA) // Если получены данные
         {
             wstring data = m.data; // Получаем данные
             int len = data.length();
             if (len >= bufferSize) len = bufferSize - 1; // Ограничиваем размер
-            for (int i = 0; i < len; i++) buffer[i] = data[i];
+            for (int i = 0; i < len; i++) buffer[i] = data[i]; // Копируем данные в буфер
             buffer[len] = L'\0'; // Добавляем нулевой символ
             return len; // Возвращаем количество символов
         }

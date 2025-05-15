@@ -23,5 +23,8 @@
     <ClInclude Include="Titov_c.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
+    <ClInclude Include="asio.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -1,5 +1,5 @@
 #pragma once
-#include "../DLL_Titov/asio.h"
+#include "asio.h"
 
 inline void DoWrite()
 {
