@@ -77,7 +77,7 @@ def send_only(msg, host, port):
 def listener(host, port):
     while True:
         time.sleep(1)
-        req = Message(MR_BROKER, Message.ClientID, MT_GETDATA)
+        req = Message(0, Message.ClientID, MT_GETDATA)
         try:
             resp = connect_and_recv(req, host, port)
             if resp.type == MT_DATA:

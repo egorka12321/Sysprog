@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Net.Sockets;
-using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
@@ -10,11 +9,9 @@ namespace Lab1_Titov
     public partial class Form1 : Form
     {
         private int clientID = -1;
+        private int lastSessionCount = -1;
         private System.Windows.Forms.Timer sessionTimer;
         private System.Windows.Forms.Timer messageTimer;
-        private int lastSessionCount = -1;
-        private const int MT_DATA = 4;
-        private const int MT_TIMEOUT_EXIT = 7;
         private const string SERVER_IP = "127.0.0.1";
         private const int SERVER_PORT = 12345;
 
@@ -67,7 +64,8 @@ namespace Lab1_Titov
             }
         }
 
-        private int InitClient(string name)
+        // Отправляет INIT-запрос на сервер и возвращает присвоенный ID
+        private int InitClient(string name) 
         {
             using (TcpClient client = new TcpClient(SERVER_IP, SERVER_PORT))
             using (NetworkStream stream = client.GetStream())
@@ -102,6 +100,7 @@ namespace Lab1_Titov
             }
         }
 
+        // Метод для отправки текстового сообщения другому клиенту или всем
         private void SendMessage(int to, int from, string message)
         {
             using (TcpClient client = new TcpClient(SERVER_IP, SERVER_PORT))
@@ -123,38 +122,7 @@ namespace Lab1_Titov
             }
         }
 
-        private string GetSessionList(int clientID)
-        {
-            using (TcpClient client = new TcpClient(SERVER_IP, SERVER_PORT))
-            using (NetworkStream stream = client.GetStream())
-            {
-                MessageHeader request = new MessageHeader
-                {
-                    to = 0,
-                    from = clientID,
-                    type = (int)MessageTypes.MT_GETSESSIONS,
-                    size = 0
-                };
-
-                byte[] requestBytes = StructToBytes(request);
-                stream.Write(requestBytes, 0, requestBytes.Length);
-
-                byte[] responseHeader = new byte[Marshal.SizeOf<MessageHeader>()];
-                stream.Read(responseHeader, 0, responseHeader.Length);
-
-                MessageHeader response = BytesToStruct<MessageHeader>(responseHeader);
-
-                if (response.type == (int)MessageTypes.MT_DATA && response.size > 0)
-                {
-                    byte[] data = new byte[response.size];
-                    stream.Read(data, 0, data.Length);
-                    return Encoding.Unicode.GetString(data);
-                }
-
-                return "";
-            }
-        }
-
+        // Запрашивает одно новое входящее сообщение
         private (int type, int from, string message) GetMessage(int clientID)
         {
             using (TcpClient client = new TcpClient(SERVER_IP, SERVER_PORT))
@@ -192,24 +160,65 @@ namespace Lab1_Titov
             }
         }
 
-        private void ExitClient(int clientID)
+        // Получаем и обрабатываем входящие сообщения по таймеру
+        private void ReceiveMessages(object sender, EventArgs e)
+        {
+            try
+            {
+                var (type, from, message) = GetMessage(clientID);
+
+                if (type == (int)MessageTypes.MT_DATA && !string.IsNullOrEmpty(message))
+                {
+                    MessageListBox.Items.Add($"От {from}: {message}");
+                }
+                else if (type == (int)MessageTypes.MT_TIMEOUT_EXIT)
+                {
+                    sessionTimer?.Stop();
+                    messageTimer?.Stop();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Ошибка соединения: " + ex.Message);
+                sessionTimer?.Stop();
+                messageTimer?.Stop();
+            }
+        }
+
+        // Запрашивает список активных сессий и возвращает строку вида "1:Клиент 1;2:Клиент 2;"
+        private string GetSessionList(int clientID)
         {
             using (TcpClient client = new TcpClient(SERVER_IP, SERVER_PORT))
             using (NetworkStream stream = client.GetStream())
             {
-                MessageHeader header = new MessageHeader
+                MessageHeader request = new MessageHeader
                 {
                     to = 0,
                     from = clientID,
-                    type = (int)MessageTypes.MT_EXIT,
+                    type = (int)MessageTypes.MT_GETSESSIONS,
                     size = 0
                 };
 
-                byte[] headerBytes = StructToBytes(header);
-                stream.Write(headerBytes, 0, headerBytes.Length);
+                byte[] requestBytes = StructToBytes(request);
+                stream.Write(requestBytes, 0, requestBytes.Length);
+
+                byte[] responseHeader = new byte[Marshal.SizeOf<MessageHeader>()];
+                stream.Read(responseHeader, 0, responseHeader.Length);
+
+                MessageHeader response = BytesToStruct<MessageHeader>(responseHeader);
+
+                if (response.type == (int)MessageTypes.MT_DATA && response.size > 0)
+                {
+                    byte[] data = new byte[response.size];
+                    stream.Read(data, 0, data.Length);
+                    return Encoding.Unicode.GetString(data);
+                }
+
+                return "";
             }
         }
 
+        // Обновляет список сессий в UI при срабатывании sessionTimer
         private void UpdateSessionList(object sender, EventArgs e)
         {
             try
@@ -253,28 +262,7 @@ namespace Lab1_Titov
             }
         }
 
-        private void ReceiveMessages(object sender, EventArgs e)
-        {
-            try
-            {
-                var (type, from, message) = GetMessage(clientID);
-
-                if (type == MT_DATA && !string.IsNullOrEmpty(message))
-                {
-                    MessageListBox.Items.Add($"От {from}: {message}");
-                }
-                else if (type == MT_TIMEOUT_EXIT)
-                {
-                    this.Close();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Исключение: " + ex.Message);
-                this.Close();
-            }
-        }
-
+        // Обработчик нажатия кнопки "Send"
         private void SendButton_Click(object sender, EventArgs e)
         {
             if (SessionListBox.SelectedIndex == -1)
@@ -288,12 +276,12 @@ namespace Lab1_Titov
 
             if (selected == "Все клиенты")
             {
-                to = -2;
+                to = (int)MessageTypes.MT_GETSESSIONS * -1; // MR_ALL == -2
             }
             else
             {
-                string idStr = selected.Split(' ')[1];
-                if (!int.TryParse(idStr, out to))
+                // Ожидаем, что формат строки "Клиент X"
+                if (!int.TryParse(selected.Replace("Клиент ", ""), out to))
                 {
                     MessageBox.Show("Неверный формат ID получателя");
                     return;
@@ -314,22 +302,35 @@ namespace Lab1_Titov
             }
         }
 
-        protected override void OnFormClosing(FormClosingEventArgs e)
+        // Отправляет EXIT-запрос, уведомляя сервер об отключении клиента
+        private void ExitClient(int clientID)
         {
-            try
+            using (TcpClient client = new TcpClient(SERVER_IP, SERVER_PORT))
+            using (NetworkStream stream = client.GetStream())
             {
-                ExitClient(clientID);
-            }
-            catch { }
-            finally
-            {
-                sessionTimer?.Stop();
-                messageTimer?.Stop();
-                base.OnFormClosing(e);
+                MessageHeader header = new MessageHeader
+                {
+                    to = 0,
+                    from = clientID,
+                    type = (int)MessageTypes.MT_EXIT,
+                    size = 0
+                };
+
+                byte[] headerBytes = StructToBytes(header);
+                stream.Write(headerBytes, 0, headerBytes.Length);
             }
         }
 
-        // Helper methods
+        // При закрытии формы уведомляем сервер и останавливаем таймеры
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            ExitClient(clientID);
+            sessionTimer?.Stop();
+            messageTimer?.Stop();
+            base.OnFormClosing(e);
+        }
+
+        // Вспомогательный метод: упаковать struct в byte[]
         public static byte[] StructToBytes<T>(T obj) where T : struct
         {
             int size = Marshal.SizeOf<T>();
@@ -347,6 +348,7 @@ namespace Lab1_Titov
             }
         }
 
+        // Вспомогательный метод: распаковать byte[] в struct
         public static T BytesToStruct<T>(byte[] data) where T : struct
         {
             IntPtr ptr = Marshal.AllocHGlobal(data.Length);

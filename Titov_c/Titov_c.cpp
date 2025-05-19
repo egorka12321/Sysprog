@@ -3,33 +3,38 @@
 
 int maxID = MR_USER;
 map<int, shared_ptr<Session>> sessions;
-const chrono::seconds TIMEOUT(10); // Таймаут в 10 секунд
+const chrono::seconds TIMEOUT(15); // Таймаут в 15 секунд
 mutex sessionsMutex; 
 
-//void checkTimeouts()
-//{
-//    while (true)
-//    {
-//        this_thread::sleep_for(chrono::seconds(10));
-//        auto now = chrono::steady_clock::now();
-//        lock_guard<mutex> lock(sessionsMutex);
-//        for (auto it = sessions.begin(); it != sessions.end(); )
-//        {
-//            auto elapsed = chrono::duration_cast<chrono::seconds>(now - it->second->lastAccessTime);
-//            if (elapsed > TIMEOUT)
-//            {
-//                Message exitMsg(it->first, MR_BROKER, MT_TIMEOUT_EXIT);
-//                it->second->addMessage(exitMsg);
-//                it = sessions.erase(it); // Удаляем сессию
-//                wcout << L"сессия удалена" << it->first << endl;
-//            }
-//            else
-//            {
-//                ++it;
-//            }
-//        }
-//    }
-//}
+void checkTimeouts()
+{
+    while (true)
+    {
+        this_thread::sleep_for(chrono::seconds(10));
+        auto now = chrono::steady_clock::now();
+        lock_guard<mutex> lock(sessionsMutex);
+
+        for (auto it = sessions.begin(); it != sessions.end(); )
+        {
+            auto elapsed = chrono::duration_cast<chrono::seconds>(now - it->second->lastAccessTime);
+            if (elapsed > TIMEOUT)
+            {
+                int idToRemove = it->first; // Сохраняем ID перед удалением
+
+                // Отправляем сообщение о таймауте перед удалением
+                Message exitMsg(idToRemove, MR_BROKER, MT_TIMEOUT_EXIT);
+                it->second->addMessage(exitMsg);
+
+                wcout << L"Сессия удалена: " << idToRemove << endl;
+                it = sessions.erase(it); // Удаляем сессию
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+}
 
 void launchClient(wstring path)
 {
@@ -50,7 +55,7 @@ void processClient(tcp::socket s)
         int from = m.header.from;
         int to = m.header.to;
 
-        /*if (to != 0)
+        if (to != 0)
         {
             lock_guard<mutex> lock(sessionsMutex);
             auto it = sessions.find(from);
@@ -58,7 +63,7 @@ void processClient(tcp::socket s)
             {
                 it->second->updateLastAccessTime();
             }
-        }*/
+        }
 
         switch (code)
         {
@@ -151,9 +156,8 @@ void start()
 		launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
 		launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
         launchClient(L"C:/Users/user/Documents/Lab1_Titov/bin/Debug/Lab1_Titov.exe");
-
-        //thread timeoutThread(checkTimeouts);
-        //timeoutThread.detach();
+        thread timeoutThread(checkTimeouts);
+        timeoutThread.detach();
 
         while (true)
         {
